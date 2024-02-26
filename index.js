@@ -152,6 +152,9 @@ app.get('/renarrations/:id', (req, res) => {
         res.json(doc);
     });
 });
+app.get('/', (req, res) => {
+    res.send('Server is running');
+});
 
 app.get('/renarrations', (req, res) => {
     getAllRenarrations((err, docs) => {
