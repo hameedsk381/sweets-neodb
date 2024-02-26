@@ -1,6 +1,5 @@
 # Dependency directories
-node_modules/
-sweets.db
+node_modules
 # Environment configuration files
 .env
 .env.local
