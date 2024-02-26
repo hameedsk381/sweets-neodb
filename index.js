@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
 const juice = require('juice');
 const multer = require('multer');
+const AWS = require('aws-sdk');
 const app = express();
 const port = 3000; // You can choose any port
 
@@ -15,7 +16,12 @@ app.use(bodyParser.json()); // Support json encoded bodies
 app.use(bodyParser.urlencoded({ extended: true })); // Support encoded bodies
 app.use(express.json());
 const pool = require('./db');
-
+// AWS S3 configuration
+const s3 = new AWS.S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION
+});
 // Define the destination paths for uploads and sweets
 const uploadDestination = 'uploads/';
 const sweetsDestination = 'sweets/';
@@ -64,34 +70,57 @@ const getRenarrationById = (id, callback) => {
     renarrationsDb.findOne({ _id: id }, callback);
 };
 // Route for multiple file upload
-app.post('/upload', (req, res) => {
-    upload.single('file')(req, res, (err) => {
-        if (err) {
-            console.error(err);
-            res.status(500).json({ message: 'Error uploading file' });
-        } else {
-            if (!req.file) {
-                res.status(400).json({ message: 'No file uploaded' });
-            } else {
-                const filePath = req.file.path;
-                res.status(200).json(filePath);
-            }
+
+// Route for multiple file upload to AWS S3
+app.post('/upload', upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
         }
-    });
+
+        // Read file content
+        const fileContent = fs.readFileSync(req.file.path);
+
+        // AWS S3 parameters
+        const params = {
+            Bucket: process.env.AWS_BUCKET_NAME,
+            Key: req.file.originalname,
+            Body: fileContent
+        };
+
+        // Upload file to AWS S3
+        s3.upload(params, (err, data) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ message: 'Error uploading file to AWS S3' });
+            }
+            // File uploaded successfully, you can now delete the local file
+            fs.unlinkSync(req.file.path);
+            res.status(200).json({ message: 'File uploaded to AWS S3', data });
+        });
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        res.status(500).json({ message: 'Error uploading file' });
+    }
 });
 
-// Route to delete a file from uploads folder
+// Route to delete a file from AWS S3
 app.delete('/delete-file/:filename', (req, res) => {
     const filename = req.params.filename;
-    const filePath = path.join(uploadDestination, filename);
 
-    fs.unlink(filePath, (err) => {
+    // AWS S3 parameters for file deletion
+    const params = {
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: filename
+    };
+
+    // Delete file from AWS S3
+    s3.deleteObject(params, (err, data) => {
         if (err) {
             console.error(err);
-            res.status(500).json({ message: 'Error deleting file' });
-        } else {
-            res.status(200).json({ message: 'File deleted successfully' });
+            return res.status(500).json({ message: 'Error deleting file from AWS S3' });
         }
+        res.status(200).json({ message: 'File deleted from AWS S3', data });
     });
 });
 app.post('/sweets/create-renarration', sweetsUpload.any(), (req, res) => {
